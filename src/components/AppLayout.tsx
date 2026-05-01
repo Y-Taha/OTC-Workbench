@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { isSupabaseConfigured, supabaseClient } from '../lib/supabaseClient'
+import { isPlatformAdminTenant } from '../lib/tenant'
 import { useTenant } from '../providers/TenantProvider'
 
 type NavItem = {
@@ -109,12 +110,8 @@ export default function AppLayout() {
       if (!user) return
 
       const authName = String(user.user_metadata?.full_name || user.user_metadata?.name || user.email || 'Signed in')
-      const { data: appUser } = await supabaseClient
-        .from('app_users')
-        .select('name, email')
-        .eq('tenant_id', tenant.id)
-        .or(`auth_user_id.eq.${user.id},email.eq.${user.email}`)
-        .maybeSingle()
+      const appUserQuery = supabaseClient.from('app_users').select('name, email').or(`auth_user_id.eq.${user.id},email.eq.${user.email}`)
+      const { data: appUser } = await (isPlatformAdminTenant(tenant) ? appUserQuery : appUserQuery.eq('tenant_id', tenant.id)).maybeSingle()
 
       if (isMounted) setUserName(String(appUser?.name || authName))
     }

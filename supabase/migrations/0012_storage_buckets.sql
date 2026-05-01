@@ -1,7 +1,3 @@
--- Final bucket configuration only.
--- Tenant-scoped storage.objects policies are created by
--- ../migrations/0010_production_tenant_rls.sql.
-
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values
   ('logos', 'logos', true, 5242880, array['image/jpeg', 'image/png', 'image/webp', 'image/gif']),

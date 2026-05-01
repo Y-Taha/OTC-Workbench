@@ -37,7 +37,7 @@ export default function App() {
 
 function TenantScopedRefine() {
   const tenant = useTenant()
-  const tenantDataProvider = useMemo(() => ({ default: createTenantDataProvider(tenant.id) }), [tenant.id])
+  const tenantDataProvider = useMemo(() => ({ default: createTenantDataProvider(tenant) }), [tenant])
 
   return (
     <Refine

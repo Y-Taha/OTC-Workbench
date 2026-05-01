@@ -1,6 +1,7 @@
 import { BarChart3, Database } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { isPlatformAdminTenant } from '../lib/tenant'
 import { supabaseClient } from '../lib/supabaseClient'
 import { useTenant } from '../providers/TenantProvider'
 
@@ -115,7 +116,8 @@ function useTenantView<T extends Record<string, unknown>>(resource: string, tena
     setError(null)
 
     async function loadRows() {
-      const { data: rows, error: queryError } = await supabaseClient.from(resource).select('*').eq('tenant_id', activeTenantId)
+      const query = supabaseClient.from(resource).select('*')
+      const { data: rows, error: queryError } = await (isPlatformAdminTenant(tenant) ? query : query.eq('tenant_id', activeTenantId))
 
       if (!isMounted) return
 
@@ -139,7 +141,7 @@ function useTenantView<T extends Record<string, unknown>>(resource: string, tena
     return () => {
       isMounted = false
     }
-  }, [resource, activeTenantId])
+  }, [resource, activeTenantId, tenant])
 
   return { data, loading, error }
 }

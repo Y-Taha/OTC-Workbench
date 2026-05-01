@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { useList, useNavigation, useOne } from '@refinedev/core'
 import { useParams } from 'react-router-dom'
 import { ipResourceByType, type FieldConfig, resourceByName } from '../data/resources'
-import { isTenantScopedResource } from '../lib/tenant'
+import { isPlatformAdminTenant, isTenantScopedResource } from '../lib/tenant'
 import { supabaseClient } from '../lib/supabaseClient'
 import { useTenant } from '../providers/TenantProvider'
 
@@ -148,19 +148,21 @@ export default function ResourceForm({ resourceName, mode }: ResourceFormProps) 
       )
       applyCalculatedFields(resourceName, payload)
       validatePayload(resourceName, payload)
-      if (isTenantScopedResource(resourceName)) payload.tenant_id = tenant.id
+      const tenantScoped = isTenantScopedResource(resourceName)
+      const recordTenantId = typeof record.tenant_id === 'string' ? record.tenant_id : tenant.id
+      if (tenantScoped && (!isPlatformAdminTenant(tenant) || mode === 'create')) payload.tenant_id = tenant.id
 
       if (mode === 'edit') {
-        const { data: updatedRecord, error } = await supabaseClient
-          .from(resourceName)
-          .update(payload)
-          .eq('id', id)
-          .eq('tenant_id', tenant.id)
+        const updateQuery = supabaseClient.from(resourceName).update(payload).eq('id', id)
+        const { data: updatedRecord, error } = await (isPlatformAdminTenant(tenant) || !tenantScoped
+          ? updateQuery
+          : updateQuery.eq('tenant_id', tenant.id)
+        )
           .select('id')
           .single()
 
         if (error) throw error
-        await syncPivotTables(resourceName, Number(updatedRecord.id), tenant.id, payload)
+        await syncPivotTables(resourceName, Number(updatedRecord.id), recordTenantId, payload)
         list(resourceName)
         return
       }

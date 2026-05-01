@@ -5,10 +5,17 @@ create table if not exists tenants (
   created_at timestamptz not null default now()
 );
 
+do $$
+begin
+  create type public.tenant_membership_role as enum ('member', 'admin');
+exception
+  when duplicate_object then null;
+end $$;
+
 create table if not exists tenant_memberships (
   tenant_id uuid not null references tenants(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
-  role text not null default 'member' check (role in ('owner', 'admin', 'member')),
+  role public.tenant_membership_role not null default 'member',
   created_at timestamptz not null default now(),
   primary key (tenant_id, user_id)
 );

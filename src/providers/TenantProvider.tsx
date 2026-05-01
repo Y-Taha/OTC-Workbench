@@ -35,7 +35,11 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       <ForbiddenPage
         fullPage
         title="Tenant access denied"
-        message={`Your account is not authorized for the "${tenantSlug}" workspace.`}
+        message={
+          tenantSlug
+            ? `Your account is not authorized for the "${tenantSlug}" workspace.`
+            : 'Open this app from a tenant subdomain to choose a workspace.'
+        }
         detail={error}
       />
     )

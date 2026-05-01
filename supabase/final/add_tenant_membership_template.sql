@@ -2,9 +2,10 @@
 -- user has been created in Supabase Auth.
 --
 -- Replace the email, tenant slug, and role before running.
+-- Role must be either 'member' or 'admin'.
 
 insert into public.tenant_memberships (tenant_id, user_id, role)
-select t.id, u.id, 'owner'
+select t.id, u.id, 'admin'
 from public.tenants t
 join auth.users u on lower(u.email) = lower('user@example.com')
 where t.slug = 'default'

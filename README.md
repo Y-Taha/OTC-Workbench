@@ -20,7 +20,6 @@ Set these values in `.env`:
 ```bash
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
-VITE_TENANT_SLUG=default
 ```
 
 ## Database
@@ -37,16 +36,19 @@ The bootstrap intentionally excludes obsolete prototype/demo migrations and uses
 
 The current tenant model uses:
 
-- `tenants.slug` to identify the frontend deployment.
+- `tenants.slug` to identify the frontend deployment from the request subdomain, for example `default.example.com` or `default.localhost` uses the `default` tenant.
 - `tenant_id` on tenant-owned records.
 - `tenant_memberships` to grant authenticated users access to a tenant.
+- The reserved `admin` tenant for users who should see and manage records across every tenant.
 - Storage paths under `tenants/{tenantSlug}/...`.
+
+Requests without a tenant subdomain show a tenant access error instead of falling back to `default`.
 
 The app does not create tenants from the browser. Create tenants and initial memberships through a trusted admin/service-role workflow or a migration. Existing demo data is backfilled into the `default` tenant.
 
 ## Auth
 
-Private app routes are gated by Supabase Auth. Users must sign in at `/login` and must have a matching `tenant_memberships` row for the configured `VITE_TENANT_SLUG`.
+Private app routes are gated by Supabase Auth. Users must sign in at `/login` and must have a matching `tenant_memberships` row for the tenant resolved from the current subdomain.
 
 ## Production Checklist
 

@@ -19,9 +19,12 @@ export type Tenant = {
   id: string
   slug: string
   name: string
+  isPlatformAdmin: boolean
 }
 
-export const tenantSlug = import.meta.env.VITE_TENANT_SLUG || 'default'
+const platformAdminTenantSlug = 'admin'
+
+export const tenantSlug = tenantSlugFromHost(window.location.hostname)
 
 const tenantScopedViews = [
   'v_dashboard_kpis',
@@ -39,7 +42,15 @@ export function isTenantScopedResource(resource: string) {
   return tenantScopedResources.has(resource)
 }
 
+export function isPlatformAdminTenant(tenant: Tenant) {
+  return tenant.isPlatformAdmin
+}
+
 export async function loadTenant() {
+  if (!tenantSlug) {
+    throw new Error('No tenant subdomain was found. Use a tenant subdomain such as default.example.com or admin.example.com.')
+  }
+
   const slug = tenantSlug.trim()
   const { data: tenant, error } = await supabaseClient
     .from('tenants')
@@ -52,16 +63,18 @@ export async function loadTenant() {
     throw new Error(`Tenant "${slug}" is not configured. Create it through an admin migration or service-role workflow.`)
   }
 
-  return tenant as Tenant
+  return { ...(tenant as Omit<Tenant, 'isPlatformAdmin'>), isPlatformAdmin: tenant.slug === platformAdminTenantSlug }
 }
 
-export function createTenantDataProvider(tenantId: string): DataProvider {
+export function createTenantDataProvider(tenant: Tenant): DataProvider {
   const baseProvider = dataProvider(supabaseClient) as DataProvider
+  const tenantId = tenant.id
 
   const provider: DataProvider = {
     ...baseProvider,
     getList: (params) => {
       if (!isTenantScopedResource(params.resource)) return baseProvider.getList(params)
+      if (tenant.isPlatformAdmin) return baseProvider.getList(params)
 
       return baseProvider.getList({
         ...params,
@@ -70,6 +83,7 @@ export function createTenantDataProvider(tenantId: string): DataProvider {
     },
     getOne: async <TData extends BaseRecord = BaseRecord>({ resource, id }: GetOneParams): Promise<GetOneResponse<TData>> => {
       if (!isTenantScopedResource(resource)) return baseProvider.getOne({ resource, id })
+      if (tenant.isPlatformAdmin) return baseProvider.getOne({ resource, id })
 
       const { data, error } = await supabaseClient
         .from(resource)
@@ -86,6 +100,7 @@ export function createTenantDataProvider(tenantId: string): DataProvider {
       variables,
     }: CreateParams<TVariables>): Promise<CreateResponse<TData>> => {
       if (!isTenantScopedResource(resource)) return baseProvider.create({ resource, variables })
+      if (tenant.isPlatformAdmin) return baseProvider.create({ resource, variables })
 
       const { data, error } = await supabaseClient
         .from(resource)
@@ -102,6 +117,7 @@ export function createTenantDataProvider(tenantId: string): DataProvider {
       variables,
     }: UpdateParams<TVariables>): Promise<UpdateResponse<TData>> => {
       if (!isTenantScopedResource(resource)) return baseProvider.update({ resource, id, variables })
+      if (tenant.isPlatformAdmin) return baseProvider.update({ resource, id, variables })
 
       const { data, error } = await supabaseClient
         .from(resource)
@@ -119,6 +135,7 @@ export function createTenantDataProvider(tenantId: string): DataProvider {
       id,
     }: DeleteOneParams<TVariables>): Promise<DeleteOneResponse<TData>> => {
       if (!isTenantScopedResource(resource)) return baseProvider.deleteOne({ resource, id })
+      if (tenant.isPlatformAdmin) return baseProvider.deleteOne({ resource, id })
 
       const { data, error } = await supabaseClient
         .from(resource)
@@ -139,5 +156,23 @@ export function createTenantDataProvider(tenantId: string): DataProvider {
 function withTenantFilter(filters: CrudFilters | undefined, tenantId: string): CrudFilters {
   const filterList = filters ?? []
   return [...filterList, { field: 'tenant_id', operator: 'eq', value: tenantId }]
+}
+
+function tenantSlugFromHost(hostname: string) {
+  const normalizedHostname = hostname.toLowerCase().trim()
+
+  if (!normalizedHostname || normalizedHostname === 'localhost' || isIpAddress(normalizedHostname)) {
+    return null
+  }
+
+  const labels = normalizedHostname.split('.').filter(Boolean)
+  if (labels.length === 2 && labels[1] === 'localhost') return labels[0]
+  if (labels.length < 3 || labels[0] === 'www') return null
+
+  return labels[0]
+}
+
+function isIpAddress(hostname: string) {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.includes(':')
 }
 
