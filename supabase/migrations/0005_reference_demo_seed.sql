@@ -22,7 +22,7 @@ insert into entity_industries (entity_id, industry) values
   (9, 'Policy'), (9, 'Innovation'), (9, 'Technology Transfer'),
   (10, 'Petrochemicals'), (10, 'Energy'), (10, 'Materials');
 
-insert into app_users (id, entity_id, name, title, mobile, email, department, affiliation_status) values
+insert into profiles (id, entity_id, name, title, mobile, email, department, affiliation_status) values
   (1, 1, 'Dr. Ahmed Hassan El-Sayed', 'Professor of Biomedical Engineering', '+20-10-12345678', 'a.hassan@cu.edu.eg', 'Biomedical Engineering', 'Full-Time'),
   (2, 3, 'Dr. Fatima Ibrahim El-Sharif', 'Senior Research Scientist', '+20-10-22334455', 'f.ibrahim@nrc.sci.eg', 'Biotechnology', 'Full-Time'),
   (3, 2, 'Dr. Mohamed Abdel-Rahman Khalil', 'Associate Professor', '+20-11-55667788', 'm.khalil@asu.edu.eg', 'Environmental Engineering', 'Full-Time'),
@@ -140,7 +140,7 @@ insert into solutions (id, title, industry_common_challenge_id, consultation_id,
   (4,'Commercialise Bagasse Biopolymer Film',4,null,array['Know-How:3'],'Spin off packaging film manufacturing.');
 
 select setval(pg_get_serial_sequence('entities', 'id'), (select max(id) from entities));
-select setval(pg_get_serial_sequence('app_users', 'id'), (select max(id) from app_users));
+select setval(pg_get_serial_sequence('profiles', 'id'), (select max(id) from profiles));
 select setval(pg_get_serial_sequence('funds', 'id'), (select max(id) from funds));
 select setval(pg_get_serial_sequence('research_areas', 'id'), (select max(id) from research_areas));
 select setval(pg_get_serial_sequence('research', 'id'), (select max(id) from research));

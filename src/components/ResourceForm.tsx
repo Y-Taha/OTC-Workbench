@@ -17,6 +17,15 @@ type Draft = Record<string, DraftValue>
 type FileDraft = Record<string, File | null>
 type RelationOption = Record<string, unknown> & { id: string | number }
 type RepeaterRow = Record<string, unknown>
+type CreateTenantUserResponse = {
+  data?: { id: string | number }
+  temporaryPassword?: string
+  error?: string
+}
+type ResetTenantUserPasswordResponse = {
+  temporaryPassword?: string
+  error?: string
+}
 
 const bucketByField: Record<string, string> = {
   logo_path: 'logos',
@@ -88,8 +97,8 @@ export default function ResourceForm({ resourceName, mode }: ResourceFormProps) 
   })
 
   const defaults = useMemo<Draft>(
-    () => Object.fromEntries(resource.fields.map((field) => [field.name, emptyValue(field)])),
-    [resource.fields],
+    () => Object.fromEntries(formFields(resourceName, mode, resource.fields).map((field) => [field.name, emptyValue(field)])),
+    [mode, resource.fields, resourceName],
   )
 
   const [draft, setDraft] = useState<Draft>({})
@@ -97,6 +106,7 @@ export default function ResourceForm({ resourceName, mode }: ResourceFormProps) 
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [createdUserPassword, setCreatedUserPassword] = useState<string | null>(null)
   const record = (result || {}) as Draft
   const values = mode === 'edit' ? { ...defaults, ...record, ...draft } : { ...defaults, ...draft }
 
@@ -137,7 +147,7 @@ export default function ResourceForm({ resourceName, mode }: ResourceFormProps) 
     try {
       const uploadedPaths = await uploadFiles()
       const payload = Object.fromEntries(
-        resource.fields
+        formFields(resourceName, mode, resource.fields)
           .filter((field) => !field.readOnly)
           .map((field) => [
             field.name,
@@ -153,7 +163,8 @@ export default function ResourceForm({ resourceName, mode }: ResourceFormProps) 
       if (tenantScoped && (!isPlatformAdminTenant(tenant) || mode === 'create')) payload.tenant_id = tenant.id
 
       if (mode === 'edit') {
-        const updateQuery = supabaseClient.from(resourceName).update(payload).eq('id', id)
+        const tablePayload = resourceName === 'profiles' ? withoutProfileVirtualFields(payload) : payload
+        const updateQuery = supabaseClient.from(resourceName).update(tablePayload).eq('id', id)
         const { data: updatedRecord, error } = await (isPlatformAdminTenant(tenant) || !tenantScoped
           ? updateQuery
           : updateQuery.eq('tenant_id', tenant.id)
@@ -162,8 +173,20 @@ export default function ResourceForm({ resourceName, mode }: ResourceFormProps) 
           .single()
 
         if (error) throw error
+        if (resourceName === 'profiles') {
+          await updateProfileRole(tenant.id, record.auth_user_id, payload.role)
+        }
         await syncPivotTables(resourceName, Number(updatedRecord.id), recordTenantId, payload)
         list(resourceName)
+        return
+      }
+
+      if (resourceName === 'profiles') {
+        const { profile, temporaryPassword } = await createTenantAuthUser(tenant.id, payload)
+        const createdRecord = profile
+        await syncPivotTables(resourceName, Number(createdRecord.id), tenant.id, payload)
+        setCreatedUserPassword(temporaryPassword)
+        setDraft({})
         return
       }
 
@@ -182,6 +205,18 @@ export default function ResourceForm({ resourceName, mode }: ResourceFormProps) 
 
   if (!resource) return null
   if (mode === 'edit' && query?.isLoading) return <div className="page-card">Loading record...</div>
+  if (createdUserPassword) {
+    return (
+      <section className="page">
+        <TemporaryPasswordPanel
+          title="User created"
+          password={createdUserPassword}
+          onBack={() => list(resourceName)}
+          description="Share this temporary password with the user. It will only be shown now."
+        />
+      </section>
+    )
+  }
 
   return (
     <section className="page">
@@ -196,7 +231,7 @@ export default function ResourceForm({ resourceName, mode }: ResourceFormProps) 
       </div>
 
       <form className="form-grid page-card" onSubmit={submit}>
-        {resource.fields.filter((field) => isVisible(field, values)).map((field) => (
+        {formFields(resourceName, mode, resource.fields).filter((field) => isVisible(field, values)).map((field) => (
           <FieldInput
             key={field.name}
             field={field}
@@ -219,7 +254,154 @@ export default function ResourceForm({ resourceName, mode }: ResourceFormProps) 
           </button>
         </div>
       </form>
+
+      {resourceName === 'profiles' && mode === 'edit' && typeof id === 'string' && (
+        <ResetPasswordSection profileId={id} tenantId={tenant.id} />
+      )}
     </section>
+  )
+}
+
+function formFields(_resourceName: string, _mode: 'create' | 'edit', fields: FieldConfig[]) {
+  return fields
+}
+
+async function createTenantAuthUser(tenantId: string, payload: Record<string, unknown>) {
+  const { data, error } = await supabaseClient.functions.invoke<CreateTenantUserResponse>('create-tenant-user', {
+    body: {
+      tenantId,
+      entity_id: nullableNumber(payload.entity_id),
+      name: payload.name,
+      title: payload.title,
+      mobile: payload.mobile,
+      email: payload.email,
+      department: payload.department,
+      affiliation_status: payload.affiliation_status,
+      role: payload.role,
+    },
+  })
+
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  if (!data?.data?.id) throw new Error('User was created but no app user id was returned.')
+  if (!data.temporaryPassword) throw new Error('User was created but no temporary password was returned.')
+
+  return { profile: data.data, temporaryPassword: data.temporaryPassword }
+}
+
+function withoutProfileVirtualFields(payload: Record<string, unknown>) {
+  const { role: _role, ...tablePayload } = payload
+  return tablePayload
+}
+
+async function updateProfileRole(tenantId: string, authUserId: unknown, role: unknown) {
+  if (role !== 'admin' && role !== 'member') return
+  if (typeof authUserId !== 'string') throw new Error('This profile is not linked to an auth user.')
+
+  const { error } = await supabaseClient
+    .from('tenant_memberships')
+    .update({ role })
+    .eq('tenant_id', tenantId)
+    .eq('user_id', authUserId)
+
+  if (error) throw error
+}
+
+async function resetTenantUserPassword(tenantId: string, profileId: string) {
+  const { data, error } = await supabaseClient.functions.invoke<ResetTenantUserPasswordResponse>('reset-tenant-user-password', {
+    body: {
+      tenantId,
+      profileId,
+    },
+  })
+
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  if (!data?.temporaryPassword) throw new Error('Password was reset but no temporary password was returned.')
+
+  return data.temporaryPassword
+}
+
+function TemporaryPasswordPanel({
+  title,
+  description,
+  password,
+  onBack,
+}: {
+  title: string
+  description: string
+  password: string
+  onBack?: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+
+  async function copyPassword() {
+    await navigator.clipboard.writeText(password)
+    setCopied(true)
+  }
+
+  return (
+    <div className="page-card temporary-password-card">
+      <p className="eyebrow">{title}</p>
+      <h1>Temporary password</h1>
+      <p className="muted">{description}</p>
+      <div className="temporary-password-value">{password}</div>
+      <div className="form-actions">
+        <button className="button primary" type="button" onClick={copyPassword}>
+          {copied ? 'Copied' : 'Copy password'}
+        </button>
+        {onBack && (
+          <button className="button secondary" type="button" onClick={onBack}>
+            Back to users
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ResetPasswordSection({ tenantId, profileId }: { tenantId: string; profileId: string }) {
+  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null)
+  const [isResetting, setIsResetting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function resetPassword() {
+    if (!window.confirm('Reset this user password? The old password will stop working.')) return
+
+    setError(null)
+    setIsResetting(true)
+
+    try {
+      setTemporaryPassword(await resetTenantUserPassword(tenantId, profileId))
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : 'Could not reset password.')
+    } finally {
+      setIsResetting(false)
+    }
+  }
+
+  return (
+    <div className="page-card password-reset-card">
+      <div>
+        <p className="eyebrow">User access</p>
+        <h2>Reset password</h2>
+        <p className="muted">Generate a new temporary password for this user. It will only be shown once.</p>
+      </div>
+
+      {temporaryPassword ? (
+        <TemporaryPasswordPanel
+          title="Password reset"
+          password={temporaryPassword}
+          description="Share this temporary password with the user. It will only be shown now."
+        />
+      ) : (
+        <button className="button secondary" type="button" disabled={isResetting} onClick={resetPassword}>
+          {isResetting ? 'Resetting...' : 'Generate new temporary password'}
+        </button>
+      )}
+
+      {error && <p className="error">{error}</p>}
+    </div>
   )
 }
 
@@ -697,7 +879,7 @@ function FundRepeater({ value, onChange }: { value: DraftValue; onChange: (value
 function InventorRepeater({ value, onChange }: { value: DraftValue; onChange: (value: DraftValue) => void }) {
   const rows = asRows(value)
   const { result, query } = useList<RelationOption>({
-    resource: 'app_users',
+    resource: 'profiles',
     pagination: { mode: 'server', pageSize: 100 },
     queryOptions: { retry: false },
   })
@@ -747,7 +929,7 @@ function InventorRepeater({ value, onChange }: { value: DraftValue; onChange: (v
 function ApplicantRepeater({ value, onChange }: { value: DraftValue; onChange: (value: DraftValue) => void }) {
   const rows = asRows(value)
   const { result: usersResult } = useList<RelationOption>({
-    resource: 'app_users',
+    resource: 'profiles',
     pagination: { mode: 'server', pageSize: 100 },
     queryOptions: { retry: false },
   })
@@ -822,7 +1004,7 @@ function ApplicantRepeater({ value, onChange }: { value: DraftValue; onChange: (
 function LicensorRepeater({ value, onChange }: { value: DraftValue; onChange: (value: DraftValue) => void }) {
   const rows = asRows(value)
   const { result: usersResult } = useList<RelationOption>({
-    resource: 'app_users',
+    resource: 'profiles',
     pagination: { mode: 'server', pageSize: 100 },
     queryOptions: { retry: false },
   })

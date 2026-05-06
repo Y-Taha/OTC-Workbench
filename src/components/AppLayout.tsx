@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { useCanManageUsers } from '../hooks/useCanManageUsers'
 import { isSupabaseConfigured, supabaseClient } from '../lib/supabaseClient'
 import { isPlatformAdminTenant } from '../lib/tenant'
 import { useTenant } from '../providers/TenantProvider'
@@ -98,6 +99,7 @@ function NavGroup({ item }: { item: NavItem }) {
 export default function AppLayout() {
   const navigate = useNavigate()
   const tenant = useTenant()
+  const { canManageUsers } = useCanManageUsers()
   const [userName, setUserName] = useState('Signed in')
   const userInitial = userName.trim().charAt(0).toUpperCase() || 'U'
 
@@ -110,7 +112,7 @@ export default function AppLayout() {
       if (!user) return
 
       const authName = String(user.user_metadata?.full_name || user.user_metadata?.name || user.email || 'Signed in')
-      const appUserQuery = supabaseClient.from('app_users').select('name, email').or(`auth_user_id.eq.${user.id},email.eq.${user.email}`)
+      const appUserQuery = supabaseClient.from('profiles').select('name, email').or(`auth_user_id.eq.${user.id},email.eq.${user.email}`)
       const { data: appUser } = await (isPlatformAdminTenant(tenant) ? appUserQuery : appUserQuery.eq('tenant_id', tenant.id)).maybeSingle()
 
       if (isMounted) setUserName(String(appUser?.name || authName))
@@ -139,7 +141,7 @@ export default function AppLayout() {
         </div>
 
         <nav className="nav">
-          {navItems.map((item) =>
+          {navItems.filter((item) => item.path !== '/users' || canManageUsers).map((item) =>
             item.children ? (
               <NavGroup key={item.label} item={item} />
             ) : (

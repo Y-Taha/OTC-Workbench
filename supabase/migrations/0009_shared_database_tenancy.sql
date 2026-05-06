@@ -39,7 +39,7 @@ declare
   tenant_tables text[] := array[
     'entities',
     'entity_industries',
-    'app_users',
+    'profiles',
     'funds',
     'research_areas',
     'research',

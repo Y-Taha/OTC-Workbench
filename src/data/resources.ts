@@ -41,6 +41,7 @@ export type ResourceConfig = {
 }
 
 export const entityTypeOptions = ['Company', 'Government', 'OTC', 'Research Center', 'University'] as const
+export const tenantMembershipRoleOptions = ['member', 'admin'] as const
 
 export const industries = [
   'Aerospace & Defence',
@@ -359,14 +360,15 @@ export const resources: ResourceConfig[] = [
     ],
   },
   {
-    name: 'app_users',
+    name: 'profiles',
     label: 'Users',
     icon: 'Users',
     route: 'users',
-    table: ['name', 'title', 'entity_id', 'email', 'department', 'affiliation_status'],
+    table: ['name', 'role', 'title', 'entity_id', 'email', 'department', 'affiliation_status'],
     fields: [
       relation('entity_id', 'Entity', 'entities'),
       text('name', 'Name', { required: true }),
+      select('role', 'Role', tenantMembershipRoleOptions, { required: true }),
       text('title', 'Title'),
       text('mobile', 'Mobile'),
       text('email', 'Email', { inputType: 'email' }),
@@ -397,8 +399,8 @@ export const resources: ResourceConfig[] = [
       relationMulti('research_area_ids', 'Research Areas', 'research_areas', { required: true }),
       date('start_date', 'Start Date'),
       date('end_date', 'End Date'),
-      relation('pi_user_id', 'PI (Principal Investigator)', 'app_users', { required: true }),
-      relationMulti('team_member_ids', 'Research Team', 'app_users'),
+      relation('pi_user_id', 'PI (Principal Investigator)', 'profiles', { required: true }),
+      relationMulti('team_member_ids', 'Research Team', 'profiles'),
       relation('previous_research_id', 'Previous Research', 'research'),
       select('status', 'Status', sharedOptions.researchStatuses, { required: true }),
       bool('is_funded', 'Is Funded'),
@@ -414,7 +416,7 @@ export const resources: ResourceConfig[] = [
     table: ['title', 'disclosure_date', 'own_research', 'development_status', 'is_completed', 'lead_inventor_id'],
     fields: [
       bool('own_research', 'Own Research'),
-      relation('assessment_user_id', 'Assessment User', 'app_users', { showWhen: { field: 'own_research', value: true } }),
+      relation('assessment_user_id', 'Assessment User', 'profiles', { showWhen: { field: 'own_research', value: true } }),
       relation('research_id', 'Research', 'research', { showWhen: { field: 'own_research', value: true } }),
       date('disclosure_date', 'Disclosure Date', { required: true }),
       text('title', 'Title', { required: true }),
@@ -445,7 +447,7 @@ export const resources: ResourceConfig[] = [
       multi('potential_protection', 'Potential Protection', ipTypes, { showWhen: { field: 'has_protection_potential', value: true } }),
       multi('potential_commercialization_form', 'Potential Commercialisation Form', sharedOptions.potentialCommercializationForms, { required: true }),
       bool('is_completed', 'Is Completed'),
-      relation('lead_inventor_id', 'Lead Inventor', 'app_users'),
+      relation('lead_inventor_id', 'Lead Inventor', 'profiles'),
       inventorRepeater('inventors', 'Inventors'),
       applicantRepeater('applicants', 'Applicants'),
       fundRepeater('idf_funds', 'Funds'),
@@ -538,7 +540,7 @@ export const resources: ResourceConfig[] = [
       file('drawings_path', 'Drawings', { required: true }),
       file('original_document_path', 'Original Document'),
       file('office_search_report_path', 'Patent Office Search Report'),
-      relationMulti('inventor_ids', 'Inventors', 'app_users'),
+      relationMulti('inventor_ids', 'Inventors', 'profiles'),
       applicantRepeater('applicants', 'Applicants'),
       relation('fund_id', 'Fund', 'funds'),
     ],
@@ -569,7 +571,7 @@ export const resources: ResourceConfig[] = [
       file('drawings_path', 'Drawings', { required: true }),
       file('original_document_path', 'Original Document'),
       file('office_search_report_path', 'Utility Office Search Report'),
-      relationMulti('inventor_ids', 'Inventors', 'app_users'),
+      relationMulti('inventor_ids', 'Inventors', 'profiles'),
       applicantRepeater('applicants', 'Applicants'),
       relation('fund_id', 'Fund', 'funds'),
     ],
@@ -583,7 +585,7 @@ export const resources: ResourceConfig[] = [
       text('title', 'Title', { required: true }),
       relation('prior_art_search_id', 'Prior Art Search', 'prior_art_searches'),
       file('original_document_path', 'Original Document', { required: true }),
-      relationMulti('inventor_ids', 'Inventors', 'app_users'),
+      relationMulti('inventor_ids', 'Inventors', 'profiles'),
       applicantRepeater('applicants', 'Applicants'),
       relation('fund_id', 'Fund', 'funds'),
     ],
@@ -600,7 +602,7 @@ export const resources: ResourceConfig[] = [
       file('original_document_path', 'Original Document', { required: true }),
       bool('privacy_compliant', 'Privacy Compliant'),
       file('compliance_document_path', 'Compliance Documents', { required: true, showWhen: { field: 'privacy_compliant', value: true } }),
-      relationMulti('inventor_ids', 'Inventors', 'app_users'),
+      relationMulti('inventor_ids', 'Inventors', 'profiles'),
       applicantRepeater('applicants', 'Applicants'),
     ],
   },
@@ -655,7 +657,7 @@ export const resources: ResourceConfig[] = [
     fields: [
       text('title', 'Title', { required: true }),
       textarea('description', 'Description'),
-      relation('consultant_id', 'Consultant (User)', 'app_users', { required: true }),
+      relation('consultant_id', 'Consultant (User)', 'profiles', { required: true }),
       relation('company_id', 'Company (Entity)', 'entities', { required: true }),
       relation('research_id', 'Research', 'research'),
       relation('invention_disclosure_id', 'Invention Disclosure', 'invention_disclosures'),
@@ -684,7 +686,7 @@ export const resources: ResourceConfig[] = [
       bool('available_for_rent', 'Available for Rent'),
       text('rent_term', 'Rent Term', { required: true, showWhen: { field: 'available_for_rent', value: true } }),
       number('rent_price', 'Rent Price', { required: true, showWhen: { field: 'available_for_rent', value: true } }),
-      relation('contact_person_id', 'Contact Person', 'app_users', { required: true }),
+      relation('contact_person_id', 'Contact Person', 'profiles', { required: true }),
       relation('fund_id', 'Fund', 'funds'),
     ],
   },

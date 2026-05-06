@@ -6,6 +6,8 @@ import type {
   DataProvider,
   DeleteOneParams,
   DeleteOneResponse,
+  GetListParams,
+  GetListResponse,
   GetOneParams,
   GetOneResponse,
   UpdateParams,
@@ -24,6 +26,12 @@ export type Tenant = {
 
 type TenantMembership = {
   tenant_id: string
+}
+
+type TenantMembershipRole = 'admin' | 'member'
+type ProfileRecord = BaseRecord & {
+  auth_user_id?: string | null
+  role?: TenantMembershipRole
 }
 
 const platformAdminTenantSlug = 'admin'
@@ -104,7 +112,21 @@ export function createTenantDataProvider(tenant: Tenant): DataProvider {
 
   const provider: DataProvider = {
     ...baseProvider,
-    getList: (params) => {
+    getList: async <TData extends BaseRecord = BaseRecord>(params: GetListParams): Promise<GetListResponse<TData>> => {
+      if (params.resource === 'profiles') {
+        const response = tenant.isPlatformAdmin
+          ? await baseProvider.getList<ProfileRecord>(params)
+          : await baseProvider.getList<ProfileRecord>({
+              ...params,
+              filters: withTenantFilter(params.filters, tenantId),
+            })
+
+        return {
+          ...response,
+          data: (await withProfileRoles(response.data, tenant)) as TData[],
+        }
+      }
+
       if (!isTenantScopedResource(params.resource)) return baseProvider.getList(params)
       if (tenant.isPlatformAdmin) return baseProvider.getList(params)
 
@@ -114,6 +136,17 @@ export function createTenantDataProvider(tenant: Tenant): DataProvider {
       })
     },
     getOne: async <TData extends BaseRecord = BaseRecord>({ resource, id }: GetOneParams): Promise<GetOneResponse<TData>> => {
+      if (resource === 'profiles') {
+        const { data, error } = await (tenant.isPlatformAdmin
+          ? supabaseClient.from(resource).select('*').eq('id', id)
+          : supabaseClient.from(resource).select('*').eq('id', id).eq('tenant_id', tenantId)
+        ).single()
+
+        if (error) throw error
+        const [profile] = await withProfileRoles([data as ProfileRecord], tenant)
+        return { data: profile as TData }
+      }
+
       if (!isTenantScopedResource(resource)) return baseProvider.getOne({ resource, id })
       if (tenant.isPlatformAdmin) return baseProvider.getOne({ resource, id })
 
@@ -188,6 +221,25 @@ export function createTenantDataProvider(tenant: Tenant): DataProvider {
 function withTenantFilter(filters: CrudFilters | undefined, tenantId: string): CrudFilters {
   const filterList = filters ?? []
   return [...filterList, { field: 'tenant_id', operator: 'eq', value: tenantId }]
+}
+
+async function withProfileRoles<TData extends ProfileRecord>(profiles: TData[], tenant: Tenant) {
+  const authUserIds = profiles.map((profile) => profile.auth_user_id).filter((id): id is string => typeof id === 'string')
+
+  if (!authUserIds.length) return profiles
+
+  let membershipsQuery = supabaseClient.from('tenant_memberships').select('user_id, role').in('user_id', authUserIds)
+  if (!tenant.isPlatformAdmin) membershipsQuery = membershipsQuery.eq('tenant_id', tenant.id)
+
+  const { data: memberships, error } = await membershipsQuery
+  if (error) throw error
+
+  const roleByUserId = new Map((memberships || []).map((membership) => [membership.user_id, membership.role as TenantMembershipRole]))
+
+  return profiles.map((profile) => ({
+    ...profile,
+    role: profile.auth_user_id ? roleByUserId.get(profile.auth_user_id) : undefined,
+  }))
 }
 
 function tenantSlugFromPath(pathname: string) {

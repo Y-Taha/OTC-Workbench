@@ -617,6 +617,31 @@ input[type='checkbox'] {
   padding-top: 10px;
 }
 
+.temporary-password-card,
+.password-reset-card {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.temporary-password-card h1,
+.password-reset-card h2 {
+  margin: 0;
+}
+
+.temporary-password-value {
+  padding: 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

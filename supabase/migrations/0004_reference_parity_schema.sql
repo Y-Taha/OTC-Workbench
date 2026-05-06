@@ -22,9 +22,9 @@ create table entity_industries (
   primary key (entity_id, industry)
 );
 
-create table app_users (
+create table profiles (
   id serial primary key,
-  auth_user_id uuid unique references auth.users(id) on delete set null,
+  auth_user_id uuid references auth.users(id) on delete set null,
   entity_id int references entities(id) on delete set null,
   name text not null,
   title text,
@@ -33,6 +33,11 @@ create table app_users (
   department text,
   affiliation_status text check (affiliation_status in ('Full-Time', 'Part-Time', 'Freelancer', 'External Consultant', 'External Researcher', 'Internal Faculty', 'Student', 'Internal Staff'))
 );
+
+-- Partial unique index: multiple rows may have null auth_user_id; non-null values must be unique.
+create unique index profiles_auth_user_id_key
+  on public.profiles (auth_user_id)
+  where auth_user_id is not null;
 
 create table funds (
   id serial primary key,
@@ -54,7 +59,7 @@ create table research (
   research_output_description text not null,
   start_date date,
   end_date date,
-  pi_user_id int not null references app_users(id),
+  pi_user_id int not null references profiles(id),
   previous_research_id int references research(id),
   status text not null check (status in ('In Progress', 'Completed', 'Terminated')),
   is_funded boolean not null default false,
@@ -69,7 +74,7 @@ create table research_research_area (
 
 create table research_team_member (
   research_id int not null references research(id) on delete cascade,
-  user_id int not null references app_users(id),
+  user_id int not null references profiles(id),
   is_pi boolean not null default false,
   primary key (research_id, user_id)
 );
@@ -84,7 +89,7 @@ create table research_fund (
 create table invention_disclosures (
   id serial primary key,
   own_research boolean not null default false,
-  assessment_user_id int references app_users(id),
+  assessment_user_id int references profiles(id),
   research_id int references research(id),
   research_link text,
   disclosure_date date not null,
@@ -116,7 +121,7 @@ create table invention_disclosures (
   potential_commercialization_form text[] not null default '{}',
   amount numeric(14, 2) not null default 0,
   is_completed boolean not null default false,
-  lead_inventor_id int references app_users(id),
+  lead_inventor_id int references profiles(id),
   comments text,
   constraint idf_own_research_required check (
     not own_research or (
@@ -131,7 +136,7 @@ create table invention_disclosures (
 
 create table idf_inventors (
   invention_disclosure_id int not null references invention_disclosures(id) on delete cascade,
-  user_id int not null references app_users(id),
+  user_id int not null references profiles(id),
   contribution_percentage int check (contribution_percentage between 0 and 100),
   contribution_description text,
   primary key (invention_disclosure_id, user_id)
@@ -140,7 +145,7 @@ create table idf_inventors (
 create table idf_applicants (
   id serial primary key,
   invention_disclosure_id int not null references invention_disclosures(id) on delete cascade,
-  user_applicant_id int references app_users(id),
+  user_applicant_id int references profiles(id),
   entity_applicant_id int references entities(id),
   ownership_percentage int not null check (ownership_percentage between 0 and 100),
   constraint idf_applicant_one_party check (num_nonnulls(user_applicant_id, entity_applicant_id) = 1)
@@ -254,7 +259,7 @@ create table ip_inventors (
   id serial primary key,
   ip_type text not null check (ip_type in ('Patent', 'Utility Model', 'Design Right', 'Plant Variety', 'Circuit Design', 'Copyrights', 'Know-How')),
   ip_id int not null,
-  user_id int not null references app_users(id),
+  user_id int not null references profiles(id),
   unique (ip_type, ip_id, user_id)
 );
 
@@ -262,7 +267,7 @@ create table ip_applicants (
   id serial primary key,
   ip_type text not null check (ip_type in ('Patent', 'Utility Model', 'Design Right', 'Plant Variety', 'Circuit Design', 'Copyrights', 'Know-How')),
   ip_id int not null,
-  user_applicant_id int references app_users(id),
+  user_applicant_id int references profiles(id),
   entity_applicant_id int references entities(id),
   ownership_percentage int not null check (ownership_percentage between 0 and 100),
   constraint ip_applicant_one_party check (num_nonnulls(user_applicant_id, entity_applicant_id) = 1)
@@ -330,7 +335,7 @@ create table licenses (
 create table license_licensors (
   id serial primary key,
   license_id int not null references licenses(id) on delete cascade,
-  user_licensor_id int references app_users(id),
+  user_licensor_id int references profiles(id),
   entity_licensor_id int references entities(id),
   constraint license_licensor_one_party check (num_nonnulls(user_licensor_id, entity_licensor_id) = 1)
 );
@@ -357,7 +362,7 @@ create table consultations (
   id serial primary key,
   title text not null,
   description text,
-  consultant_id int not null references app_users(id),
+  consultant_id int not null references profiles(id),
   company_id int not null references entities(id),
   research_id int references research(id),
   invention_disclosure_id int references invention_disclosures(id) on delete set null,
@@ -383,7 +388,7 @@ create table equipment (
   available_for_rent boolean not null default false,
   rent_term text,
   rent_price numeric(14, 2),
-  contact_person_id int not null references app_users(id),
+  contact_person_id int not null references profiles(id),
   fund_id int references funds(id),
   constraint equipment_rent_reveal check (not available_for_rent or (rent_term is not null and rent_price is not null))
 );
