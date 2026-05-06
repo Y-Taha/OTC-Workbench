@@ -1,24 +1,33 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
 import { supabaseClient } from '../lib/supabaseClient'
+import { loadSignedInUserTenantPath } from '../lib/tenant'
 
 export default function LoginPage() {
-  const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isCheckingSession, setIsCheckingSession] = useState(true)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let isMounted = true
 
-    supabaseClient.auth.getSession().then(({ data }) => {
-      if (!isMounted) return
-      setIsAuthenticated(Boolean(data.session))
-      setIsCheckingSession(false)
-    })
+    supabaseClient.auth
+      .getSession()
+      .then(async ({ data }) => {
+        if (!data.session) return null
+        return loadSignedInUserTenantPath()
+      })
+      .then((tenantPath) => {
+        if (!isMounted) return
+        if (tenantPath) window.location.replace(tenantPath)
+      })
+      .catch((loadError) => {
+        if (isMounted) setError(loadError instanceof Error ? loadError.message : 'Could not load your tenant workspace.')
+      })
+      .finally(() => {
+        if (isMounted) setIsCheckingSession(false)
+      })
 
     return () => {
       isMounted = false
@@ -32,18 +41,23 @@ export default function LoginPage() {
 
     const { error: signInError } = await supabaseClient.auth.signInWithPassword({ email, password })
 
-    setIsSubmitting(false)
-
     if (signInError) {
+      setIsSubmitting(false)
       setError(signInError.message)
       return
     }
 
-    navigate('/', { replace: true })
+    try {
+      const tenantPath = await loadSignedInUserTenantPath()
+      window.location.replace(tenantPath)
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Could not load your tenant workspace.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   if (isCheckingSession) return <div className="auth-page">Checking session...</div>
-  if (isAuthenticated) return <Navigate to="/" replace />
 
   return (
     <main className="auth-page">

@@ -1,5 +1,6 @@
 import type { AuthProvider } from '@refinedev/core'
 import { supabaseClient } from '../lib/supabaseClient'
+import { loadSignedInUserTenantPath } from '../lib/tenant'
 
 type Credentials = {
   email: string
@@ -17,9 +18,11 @@ export const authProvider: AuthProvider = {
       }
     }
 
+    const redirectTo = await loadSignedInUserTenantPath()
+
     return {
       success: true,
-      redirectTo: '/',
+      redirectTo,
     }
   },
   register: async ({ email, password }: Credentials) => {
@@ -32,9 +35,11 @@ export const authProvider: AuthProvider = {
       }
     }
 
+    const redirectTo = await loadSignedInUserTenantPath()
+
     return {
       success: true,
-      redirectTo: '/',
+      redirectTo,
     }
   },
   logout: async () => {

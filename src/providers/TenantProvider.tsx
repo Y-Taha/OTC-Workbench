@@ -38,7 +38,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         message={
           tenantSlug
             ? `Your account is not authorized for the "${tenantSlug}" workspace.`
-            : 'Open this app from a tenant subdomain to choose a workspace.'
+            : 'Open this app from a tenant route to choose a workspace.'
         }
         detail={error}
       />

@@ -22,9 +22,15 @@ export type Tenant = {
   isPlatformAdmin: boolean
 }
 
-const platformAdminTenantSlug = 'admin'
+type TenantMembership = {
+  tenant_id: string
+}
 
-export const tenantSlug = tenantSlugFromHost(window.location.hostname)
+const platformAdminTenantSlug = 'admin'
+const reservedRootPaths = new Set(['login'])
+
+export const tenantSlug = tenantSlugFromPath(window.location.pathname)
+export const tenantBasePath = tenantSlug ? `/${tenantSlug}` : undefined
 
 const tenantScopedViews = [
   'v_dashboard_kpis',
@@ -48,7 +54,7 @@ export function isPlatformAdminTenant(tenant: Tenant) {
 
 export async function loadTenant() {
   if (!tenantSlug) {
-    throw new Error('No tenant subdomain was found. Use a tenant subdomain such as default.example.com or admin.example.com.')
+    throw new Error('No tenant route was found. Use a tenant URL such as /default or /admin.')
   }
 
   const slug = tenantSlug.trim()
@@ -64,6 +70,32 @@ export async function loadTenant() {
   }
 
   return { ...(tenant as Omit<Tenant, 'isPlatformAdmin'>), isPlatformAdmin: tenant.slug === platformAdminTenantSlug }
+}
+
+export async function loadSignedInUserTenantPath() {
+  const { data: userData, error: userError } = await supabaseClient.auth.getUser()
+  const user = userData.user
+
+  if (userError) throw userError
+  if (!user) throw new Error('Sign in before opening a tenant workspace.')
+
+  const { data: memberships, error: membershipsError } = await supabaseClient
+    .from('tenant_memberships')
+    .select('tenant_id')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: true })
+
+  if (membershipsError) throw membershipsError
+  if (!memberships?.length) throw new Error('Your account is not assigned to a tenant workspace.')
+
+  const tenantIds = (memberships as TenantMembership[]).map((membership) => membership.tenant_id)
+  const { data: tenants, error: tenantsError } = await supabaseClient.from('tenants').select('id, slug').in('id', tenantIds)
+
+  if (tenantsError) throw tenantsError
+  if (!tenants?.length) throw new Error('Your tenant workspace could not be loaded.')
+
+  const adminTenant = tenants.find((tenant) => tenant.slug === platformAdminTenantSlug)
+  return `/${adminTenant?.slug ?? tenants[0].slug}`
 }
 
 export function createTenantDataProvider(tenant: Tenant): DataProvider {
@@ -158,21 +190,12 @@ function withTenantFilter(filters: CrudFilters | undefined, tenantId: string): C
   return [...filterList, { field: 'tenant_id', operator: 'eq', value: tenantId }]
 }
 
-function tenantSlugFromHost(hostname: string) {
-  const normalizedHostname = hostname.toLowerCase().trim()
+function tenantSlugFromPath(pathname: string) {
+  const [firstSegment] = pathname.split('/').filter(Boolean)
+  const normalizedSegment = firstSegment?.toLowerCase().trim()
 
-  if (!normalizedHostname || normalizedHostname === 'localhost' || isIpAddress(normalizedHostname)) {
-    return null
-  }
+  if (!normalizedSegment || reservedRootPaths.has(normalizedSegment)) return null
 
-  const labels = normalizedHostname.split('.').filter(Boolean)
-  if (labels.length === 2 && labels[1] === 'localhost') return labels[0]
-  if (labels.length < 3 || labels[0] === 'www') return null
-
-  return labels[0]
-}
-
-function isIpAddress(hostname: string) {
-  return /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.includes(':')
+  return normalizedSegment
 }
 

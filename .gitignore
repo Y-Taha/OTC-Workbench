@@ -43,3 +43,6 @@ Thumbs.db
 .cache/
 .vite/
 coverage/
+
+# Firebase local/deploy cache
+.firebase/

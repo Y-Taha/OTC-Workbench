@@ -5,7 +5,7 @@ import { useMemo } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import AppLayout from './components/AppLayout'
 import { refineResources } from './data/resources'
-import { createTenantDataProvider } from './lib/tenant'
+import { createTenantDataProvider, tenantBasePath } from './lib/tenant'
 import Dashboard from './pages/Dashboard'
 import { NotFoundPage } from './pages/ErrorPages'
 import LoginPage from './pages/LoginPage'
@@ -17,7 +17,7 @@ import { TenantProvider, useTenant } from './providers/TenantProvider'
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={tenantBasePath}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route
