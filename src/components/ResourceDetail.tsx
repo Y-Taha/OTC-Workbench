@@ -15,7 +15,7 @@ export default function ResourceDetail({ resourceName }: { resourceName: string 
     id,
     queryOptions: { enabled: Boolean(id), retry: false },
   })
-  const record = (result?.data ?? null) as Row | null
+  const record = (result ?? null) as Row | null
 
   if (!resource) return null
 

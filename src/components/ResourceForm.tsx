@@ -79,7 +79,7 @@ export default function ResourceForm({ resourceName, mode }: ResourceFormProps) 
   const tenant = useTenant()
   const { id } = useParams()
   const { list } = useNavigation()
-  const { result, query } = useOne({
+  const { result, query } = useOne<Draft>({
     resource: resourceName,
     id,
     queryOptions: {
@@ -97,7 +97,7 @@ export default function ResourceForm({ resourceName, mode }: ResourceFormProps) 
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const record = (result?.data || {}) as Draft
+  const record = (result || {}) as Draft
   const values = mode === 'edit' ? { ...defaults, ...record, ...draft } : { ...defaults, ...draft }
 
   const setValue = (field: FieldConfig, value: DraftValue) => {
