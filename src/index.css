@@ -411,6 +411,57 @@ textarea {
   color: #0f172a;
 }
 
+.button.danger {
+  background: #dc2626;
+  color: #fff;
+}
+
+.button:disabled,
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.confirm-dialog {
+  display: grid;
+  gap: 18px;
+  width: min(460px, 100%);
+  padding: 22px;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+}
+
+.confirm-dialog h2 {
+  margin: 4px 0 0;
+  color: #0f172a;
+  font-size: 22px;
+}
+
+.confirm-dialog-message {
+  margin: 10px 0 0;
+  color: #475569;
+  white-space: pre-line;
+  line-height: 1.55;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -502,6 +553,28 @@ textarea {
 input[type='checkbox'] {
   width: 20px;
   height: 20px;
+}
+
+.file-field {
+  display: grid;
+  gap: 6px;
+}
+
+.file-existing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.file-view-link {
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.file-view-link:hover {
+  text-decoration: underline;
 }
 
 .checkbox-list {
@@ -670,6 +743,33 @@ input[type='checkbox'] {
   font-size: 15px;
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+.detail-list {
+  display: grid;
+  gap: 8px;
+}
+
+.detail-list-row {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.detail-list-row span {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: none;
+}
+
+.detail-list-row small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .error {

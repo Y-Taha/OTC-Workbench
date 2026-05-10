@@ -1,6 +1,11 @@
-import { useDelete, useList, useNavigation, useTable } from '@refinedev/core'
+import { useList, useNavigation, useTable } from '@refinedev/core'
 import { Eye, Pencil, Plus, Trash2 } from 'lucide-react'
+import { useState } from 'react'
 import { type FieldConfig, type ResourceConfig, resourceByName } from '../data/resources'
+import { cascadeDeleteResource, cascadeDeleteWarning } from '../lib/cascadeDelete'
+import { fileNameFromPath, filePathValue } from '../lib/storageFiles'
+import { useTenant } from '../providers/TenantProvider'
+import ConfirmDialog from './ConfirmDialog'
 
 type Row = Record<string, unknown> & { id?: string | number }
 type RelationOption = Record<string, unknown> & { id: string | number }
@@ -8,7 +13,10 @@ type RelationOption = Record<string, unknown> & { id: string | number }
 export default function ResourceList({ resourceName }: { resourceName: string }) {
   const resource = resourceByName[resourceName]
   const { create, edit, show } = useNavigation()
-  const { mutate: remove } = useDelete()
+  const tenant = useTenant()
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | number | null>(null)
+  const [pendingDeleteRow, setPendingDeleteRow] = useState<Row | null>(null)
   const { tableQuery, result } = useTable<Row>({
     resource: resourceName,
     pagination: { pageSize: 25 },
@@ -19,6 +27,23 @@ export default function ResourceList({ resourceName }: { resourceName: string })
   const error = tableQuery?.error
 
   if (!resource) return null
+
+  async function deleteRow(row: Row) {
+    if (!row.id || !resource) return
+
+    setDeleteError(null)
+    setDeletingId(row.id)
+
+    try {
+      await cascadeDeleteResource(resourceName, row.id, tenant)
+      await tableQuery?.refetch?.()
+      setPendingDeleteRow(null)
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Could not delete this record.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   return (
     <section className="page">
@@ -40,6 +65,7 @@ export default function ResourceList({ resourceName }: { resourceName: string })
             Could not load live records. Confirm Supabase env vars, migrations, and RLS policies.
           </p>
         )}
+        {deleteError && <p className="error">Could not delete record: {deleteError}</p>}
 
         <div className="table-wrap">
           <table>
@@ -101,11 +127,10 @@ export default function ResourceList({ resourceName }: { resourceName: string })
                         className="icon-button danger"
                         type="button"
                         aria-label="Delete"
+                        disabled={deletingId === row.id}
                         onClick={(event) => {
                           event.stopPropagation()
-                          if (row.id && window.confirm('Delete this record? This action cannot be undone.')) {
-                            remove({ resource: resourceName, id: row.id })
-                          }
+                          setPendingDeleteRow(row)
                         }}
                       >
                         <Trash2 size={15} />
@@ -118,6 +143,20 @@ export default function ResourceList({ resourceName }: { resourceName: string })
           </table>
         </div>
       </div>
+      <ConfirmDialog
+        open={Boolean(pendingDeleteRow)}
+        title={`Delete ${resource.label} record?`}
+        message={cascadeDeleteWarning(resource.label)}
+        confirmLabel="Delete"
+        variant="danger"
+        loading={pendingDeleteRow ? deletingId === pendingDeleteRow.id : false}
+        onCancel={() => {
+          if (!deletingId) setPendingDeleteRow(null)
+        }}
+        onConfirm={() => {
+          if (pendingDeleteRow) void deleteRow(pendingDeleteRow)
+        }}
+      />
     </section>
   )
 }
@@ -137,6 +176,11 @@ function ResourceValue({ field, value }: { field?: FieldConfig; value: unknown }
 
   if (field?.type === 'relation-multi' && field.resource) {
     return <RelationMultiValue resource={field.resource} value={value} />
+  }
+
+  if (field?.type === 'file') {
+    const path = filePathValue(value)
+    return <>{path ? fileNameFromPath(path) : '-'}</>
   }
 
   return <>{formatValue(value)}</>

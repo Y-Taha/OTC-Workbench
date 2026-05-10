@@ -3,9 +3,12 @@ import { useMemo, useState } from 'react'
 import { useList, useNavigation, useOne } from '@refinedev/core'
 import { useParams } from 'react-router-dom'
 import { ipResourceByType, type FieldConfig, resourceByName } from '../data/resources'
+import { bucketForFileField } from '../lib/storageFiles'
 import { isPlatformAdminTenant, isTenantScopedResource } from '../lib/tenant'
 import { supabaseClient } from '../lib/supabaseClient'
 import { useTenant } from '../providers/TenantProvider'
+import ConfirmDialog from './ConfirmDialog'
+import StorageFileLink from './StorageFileLink'
 
 type ResourceFormProps = {
   resourceName: string
@@ -25,23 +28,6 @@ type CreateTenantUserResponse = {
 type ResetTenantUserPasswordResponse = {
   temporaryPassword?: string
   error?: string
-}
-
-const bucketByField: Record<string, string> = {
-  logo_path: 'logos',
-  diagrams_path: 'documents',
-  contractual_obligations_files_path: 'contracts',
-  prior_art_report_path: 'reports',
-  trl_report_path: 'reports',
-  mrl_report_path: 'reports',
-  commercial_assessment_report_path: 'reports',
-  drawings_path: 'documents',
-  original_document_path: 'documents',
-  office_search_report_path: 'reports',
-  compliance_document_path: 'documents',
-  licensing_document_path: 'contracts',
-  invoice_path: 'invoices',
-  contract_path: 'contracts',
 }
 
 const emptyValue = (field: FieldConfig): DraftValue => {
@@ -125,7 +111,7 @@ export default function ResourceForm({ resourceName, mode }: ResourceFormProps) 
       const file = files[field.name]
       if (!file) continue
 
-      const bucket = bucketByField[field.name] || 'documents'
+      const bucket = bucketForFileField(field.name)
       const path = storagePathFor(tenant.slug, resourceName, field.name, file)
       const { error } = await supabaseClient.storage.from(bucket).upload(path, file, {
         upsert: false,
@@ -363,11 +349,10 @@ function TemporaryPasswordPanel({
 function ResetPasswordSection({ tenantId, profileId }: { tenantId: string; profileId: string }) {
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null)
   const [isResetting, setIsResetting] = useState(false)
+  const [isConfirmingReset, setIsConfirmingReset] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function resetPassword() {
-    if (!window.confirm('Reset this user password? The old password will stop working.')) return
-
     setError(null)
     setIsResetting(true)
 
@@ -395,12 +380,27 @@ function ResetPasswordSection({ tenantId, profileId }: { tenantId: string; profi
           description="Share this temporary password with the user. It will only be shown now."
         />
       ) : (
-        <button className="button secondary" type="button" disabled={isResetting} onClick={resetPassword}>
+        <button className="button secondary" type="button" disabled={isResetting} onClick={() => setIsConfirmingReset(true)}>
           {isResetting ? 'Resetting...' : 'Generate new temporary password'}
         </button>
       )}
 
       {error && <p className="error">{error}</p>}
+      <ConfirmDialog
+        open={isConfirmingReset}
+        title="Reset this user password?"
+        message="The old password will stop working immediately. A new temporary password will be generated and shown once."
+        confirmLabel="Reset password"
+        variant="danger"
+        loading={isResetting}
+        onCancel={() => {
+          if (!isResetting) setIsConfirmingReset(false)
+        }}
+        onConfirm={() => {
+          setIsConfirmingReset(false)
+          void resetPassword()
+        }}
+      />
     </div>
   )
 }
@@ -421,6 +421,8 @@ function applyCalculatedFields(resourceName: string, payload: Record<string, unk
 }
 
 function validatePayload(resourceName: string, payload: Record<string, unknown>) {
+  validateUniqueRepeaterSelections(payload)
+
   if (['trl_assessments', 'mrl_assessments', 'crl_assessments'].includes(resourceName)) {
     if (!payload.research_id && !payload.prior_art_search_id && !payload.ip_id) {
       throw new Error('You must link this assessment to at least one of Research, Prior Art Search, or IP before saving.')
@@ -434,6 +436,41 @@ function validatePayload(resourceName: string, payload: Record<string, unknown>)
   if (resourceName === 'solutions' && !payload.consultation_id && (!Array.isArray(payload.associated_ip) || payload.associated_ip.length === 0)) {
     throw new Error('This solution must include at least one Consultation or Associated IP before saving.')
   }
+}
+
+function validateUniqueRepeaterSelections(payload: Record<string, unknown>) {
+  if (hasDuplicateValues(asRows(payload.inventors).map((row) => row.user_id))) {
+    throw new Error('Each inventor can only be added once. Remove duplicate inventor rows before saving.')
+  }
+
+  if (hasDuplicateValues(asRows(payload.applicants).map(applicantKey))) {
+    throw new Error('Each applicant can only be added once. Remove duplicate applicant rows before saving.')
+  }
+
+  if (hasDuplicateValues(asRows(payload.idf_funds).map((row) => row.fund_id))) {
+    throw new Error('Each fund can only be added once. Remove duplicate fund rows before saving.')
+  }
+
+  if (hasDuplicateValues(asNumbers(payload.inventor_ids))) {
+    throw new Error('Each inventor can only be selected once. Remove duplicate inventors before saving.')
+  }
+
+  if (hasDuplicateValues(asRows(payload.licensors).map(licensorKey))) {
+    throw new Error('Each licensor can only be added once. Remove duplicate licensor rows before saving.')
+  }
+}
+
+function hasDuplicateValues(values: unknown[]) {
+  const seen = new Set<string>()
+
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue
+    const key = String(value)
+    if (seen.has(key)) return true
+    seen.add(key)
+  }
+
+  return false
 }
 
 function sumJsonAmounts(value: unknown) {
@@ -643,6 +680,18 @@ function asRows(value: unknown): RepeaterRow[] {
   return Array.isArray(value) ? (value.filter((item) => item && typeof item === 'object') as RepeaterRow[]) : []
 }
 
+function applicantKey(row: RepeaterRow) {
+  if (row.user_applicant_id) return `user:${row.user_applicant_id}`
+  if (row.entity_applicant_id) return `entity:${row.entity_applicant_id}`
+  return ''
+}
+
+function licensorKey(row: RepeaterRow) {
+  if (row.user_licensor_id) return `user:${row.user_licensor_id}`
+  if (row.entity_licensor_id) return `entity:${row.entity_licensor_id}`
+  return ''
+}
+
 function asNumbers(value: unknown) {
   return Array.isArray(value) ? value.map(Number).filter((item) => Number.isFinite(item) && item > 0) : []
 }
@@ -799,7 +848,11 @@ function FieldInput({
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFileChange(event.target.files?.[0] || null)}
           />
           {selectedFile && <small>File ready to upload.</small>}
-          {!selectedFile && value && <small>Existing file uploaded.</small>}
+          {!selectedFile && value && (
+            <small className="file-existing">
+              Existing file uploaded. <StorageFileLink fieldName={field.name} value={value} label="View file" emptyLabel="" />
+            </small>
+          )}
         </div>
       )}
 
@@ -839,36 +892,42 @@ function FundRepeater({ value, onChange }: { value: DraftValue; onChange: (value
     queryOptions: { retry: false },
   })
   const funds = result?.data || []
+  const selectedFundIds = rows.map((row) => Number(row.fund_id)).filter(Boolean)
 
   return (
     <div className="repeater">
       {rows.length === 0 && <p className="muted">No funds added yet.</p>}
-      {rows.map((row, index) => (
-        <div className="repeater-row" key={index}>
-          <select
-            value={String(row.fund_id || '')}
-            onChange={(event) => updateRepeaterRow(rows, index, { fund_id: Number(event.target.value) || '' }, onChange)}
-          >
-            <option value="">{relationPlaceholder(query?.isLoading, Boolean(query?.error), funds.length)}</option>
-            {funds.map((fund) => (
-              <option key={fund.id} value={fund.id}>
-                {relationLabel(fund)}
-              </option>
-            ))}
-          </select>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            placeholder="Amount"
-            value={String(row.amount || '')}
-            onChange={(event) => updateRepeaterRow(rows, index, { amount: Number(event.target.value) || '' }, onChange)}
-          />
-          <button className="button secondary" type="button" onClick={() => removeRepeaterRow(rows, index, onChange)}>
-            Remove
-          </button>
-        </div>
-      ))}
+      {rows.map((row, index) => {
+        const currentFundId = Number(row.fund_id)
+        const availableFunds = funds.filter((fund) => Number(fund.id) === currentFundId || !selectedFundIds.includes(Number(fund.id)))
+
+        return (
+          <div className="repeater-row" key={index}>
+            <select
+              value={String(row.fund_id || '')}
+              onChange={(event) => updateRepeaterRow(rows, index, { fund_id: Number(event.target.value) || '' }, onChange)}
+            >
+              <option value="">{relationPlaceholder(query?.isLoading, Boolean(query?.error), funds.length)}</option>
+              {availableFunds.map((fund) => (
+                <option key={fund.id} value={fund.id}>
+                  {relationLabel(fund)}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Amount"
+              value={String(row.amount || '')}
+              onChange={(event) => updateRepeaterRow(rows, index, { amount: Number(event.target.value) || '' }, onChange)}
+            />
+            <button className="button secondary" type="button" onClick={() => removeRepeaterRow(rows, index, onChange)}>
+              Remove
+            </button>
+          </div>
+        )
+      })}
       <button className="button secondary" type="button" onClick={() => onChange([...rows, { fund_id: '', amount: '' }])}>
         + Add Fund
       </button>
@@ -884,41 +943,47 @@ function InventorRepeater({ value, onChange }: { value: DraftValue; onChange: (v
     queryOptions: { retry: false },
   })
   const users = result?.data || []
+  const selectedUserIds = rows.map((row) => Number(row.user_id)).filter(Boolean)
 
   return (
     <div className="repeater">
       {rows.length === 0 && <p className="muted">No inventors added yet.</p>}
-      {rows.map((row, index) => (
-        <div className="repeater-row" key={index}>
-          <select
-            value={String(row.user_id || '')}
-            onChange={(event) => updateRepeaterRow(rows, index, { user_id: Number(event.target.value) || '' }, onChange)}
-          >
-            <option value="">{relationPlaceholder(query?.isLoading, Boolean(query?.error), users.length)}</option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {relationLabel(user)}
-              </option>
-            ))}
-          </select>
-          <input
-            type="number"
-            min="0"
-            max="100"
-            placeholder="Contribution %"
-            value={String(row.contribution_percentage || '')}
-            onChange={(event) => updateRepeaterRow(rows, index, { contribution_percentage: Number(event.target.value) || '' }, onChange)}
-          />
-          <input
-            placeholder="Contribution Description"
-            value={String(row.contribution_description || '')}
-            onChange={(event) => updateRepeaterRow(rows, index, { contribution_description: event.target.value }, onChange)}
-          />
-          <button className="button secondary" type="button" onClick={() => removeRepeaterRow(rows, index, onChange)}>
-            Remove
-          </button>
-        </div>
-      ))}
+      {rows.map((row, index) => {
+        const currentUserId = Number(row.user_id)
+        const availableUsers = users.filter((user) => Number(user.id) === currentUserId || !selectedUserIds.includes(Number(user.id)))
+
+        return (
+          <div className="repeater-row" key={index}>
+            <select
+              value={String(row.user_id || '')}
+              onChange={(event) => updateRepeaterRow(rows, index, { user_id: Number(event.target.value) || '' }, onChange)}
+            >
+              <option value="">{relationPlaceholder(query?.isLoading, Boolean(query?.error), users.length)}</option>
+              {availableUsers.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {relationLabel(user)}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              placeholder="Contribution %"
+              value={String(row.contribution_percentage || '')}
+              onChange={(event) => updateRepeaterRow(rows, index, { contribution_percentage: Number(event.target.value) || '' }, onChange)}
+            />
+            <input
+              placeholder="Contribution Description"
+              value={String(row.contribution_description || '')}
+              onChange={(event) => updateRepeaterRow(rows, index, { contribution_description: event.target.value }, onChange)}
+            />
+            <button className="button secondary" type="button" onClick={() => removeRepeaterRow(rows, index, onChange)}>
+              Remove
+            </button>
+          </div>
+        )
+      })}
       <button className="button secondary" type="button" onClick={() => onChange([...rows, { user_id: '', contribution_percentage: '', contribution_description: '' }])}>
         + Add Inventor
       </button>
@@ -940,6 +1005,7 @@ function ApplicantRepeater({ value, onChange }: { value: DraftValue; onChange: (
   })
   const users = usersResult?.data || []
   const entities = entitiesResult?.data || []
+  const selectedPartyKeys = rows.map(applicantKey).filter(Boolean)
 
   return (
     <div className="repeater">
@@ -950,6 +1016,14 @@ function ApplicantRepeater({ value, onChange }: { value: DraftValue; onChange: (
           : row.entity_applicant_id
             ? `entity:${row.entity_applicant_id}`
             : ''
+        const availableUsers = users.filter((user) => {
+          const key = `user:${user.id}`
+          return key === selectedParty || !selectedPartyKeys.includes(key)
+        })
+        const availableEntities = entities.filter((entity) => {
+          const key = `entity:${entity.id}`
+          return key === selectedParty || !selectedPartyKeys.includes(key)
+        })
 
         return (
           <div className="repeater-row" key={index}>
@@ -969,12 +1043,12 @@ function ApplicantRepeater({ value, onChange }: { value: DraftValue; onChange: (
               }}
             >
               <option value="">Select applicant</option>
-              {users.map((user) => (
+              {availableUsers.map((user) => (
                 <option key={`user:${user.id}`} value={`user:${user.id}`}>
                   User: {relationLabel(user)}
                 </option>
               ))}
-              {entities.map((entity) => (
+              {availableEntities.map((entity) => (
                 <option key={`entity:${entity.id}`} value={`entity:${entity.id}`}>
                   Entity: {relationLabel(entity)}
                 </option>
@@ -1015,6 +1089,7 @@ function LicensorRepeater({ value, onChange }: { value: DraftValue; onChange: (v
   })
   const users = usersResult?.data || []
   const entities = entitiesResult?.data || []
+  const selectedPartyKeys = rows.map(licensorKey).filter(Boolean)
 
   return (
     <div className="repeater">
@@ -1025,6 +1100,14 @@ function LicensorRepeater({ value, onChange }: { value: DraftValue; onChange: (v
           : row.entity_licensor_id
             ? `entity:${row.entity_licensor_id}`
             : ''
+        const availableUsers = users.filter((user) => {
+          const key = `user:${user.id}`
+          return key === selectedParty || !selectedPartyKeys.includes(key)
+        })
+        const availableEntities = entities.filter((entity) => {
+          const key = `entity:${entity.id}`
+          return key === selectedParty || !selectedPartyKeys.includes(key)
+        })
 
         return (
           <div className="repeater-row compact" key={index}>
@@ -1044,12 +1127,12 @@ function LicensorRepeater({ value, onChange }: { value: DraftValue; onChange: (v
               }}
             >
               <option value="">Select licensor</option>
-              {users.map((user) => (
+              {availableUsers.map((user) => (
                 <option key={`user:${user.id}`} value={`user:${user.id}`}>
                   User: {relationLabel(user)}
                 </option>
               ))}
-              {entities.map((entity) => (
+              {availableEntities.map((entity) => (
                 <option key={`entity:${entity.id}`} value={`entity:${entity.id}`}>
                   Entity: {relationLabel(entity)}
                 </option>

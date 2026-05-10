@@ -6,6 +6,8 @@ type ErrorPageProps = {
   message?: string
   detail?: string
   fullPage?: boolean
+  homeTo?: string
+  homeLabel?: string
 }
 
 export function ForbiddenPage({
@@ -13,6 +15,8 @@ export function ForbiddenPage({
   message = 'You do not have permission to access this workspace.',
   detail,
   fullPage = false,
+  homeTo,
+  homeLabel,
 }: ErrorPageProps) {
   return (
     <ErrorShell fullPage={fullPage}>
@@ -23,7 +27,7 @@ export function ForbiddenPage({
       <h1>{title}</h1>
       <p className="muted">{message}</p>
       {detail && <p className="error-detail">{detail}</p>}
-      <ErrorActions />
+      <ErrorActions homeTo={homeTo} homeLabel={homeLabel} />
     </ErrorShell>
   )
 }
@@ -56,14 +60,14 @@ function ErrorShell({ children, fullPage }: { children: React.ReactNode; fullPag
   )
 }
 
-function ErrorActions() {
+function ErrorActions({ homeTo = '/', homeLabel = 'Go home' }: { homeTo?: string; homeLabel?: string }) {
   const navigate = useNavigate()
 
   return (
     <div className="error-actions">
-      <Link className="button primary" to="/">
+      <Link className="button primary" to={homeTo}>
         <Home size={16} />
-        Go home
+        {homeLabel}
       </Link>
       <button className="button secondary" type="button" onClick={() => navigate(-1)}>
         Go back

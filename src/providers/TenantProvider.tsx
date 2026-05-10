@@ -41,6 +41,8 @@ export function TenantProvider({ children }: { children: ReactNode }) {
             : 'Open this app from a tenant route to choose a workspace.'
         }
         detail={error}
+        homeTo="/login"
+        homeLabel="Go to login"
       />
     )
   }
