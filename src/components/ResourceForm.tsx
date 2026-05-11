@@ -422,6 +422,7 @@ function applyCalculatedFields(resourceName: string, payload: Record<string, unk
 
 function validatePayload(resourceName: string, payload: Record<string, unknown>) {
   validateUniqueRepeaterSelections(payload)
+  validatePercentageTotals(payload)
 
   if (['trl_assessments', 'mrl_assessments', 'crl_assessments'].includes(resourceName)) {
     if (!payload.research_id && !payload.prior_art_search_id && !payload.ip_id) {
@@ -435,6 +436,18 @@ function validatePayload(resourceName: string, payload: Record<string, unknown>)
 
   if (resourceName === 'solutions' && !payload.consultation_id && (!Array.isArray(payload.associated_ip) || payload.associated_ip.length === 0)) {
     throw new Error('This solution must include at least one Consultation or Associated IP before saving.')
+  }
+}
+
+function validatePercentageTotals(payload: Record<string, unknown>) {
+  const inventorTotal = percentageTotal(asRows(payload.inventors), 'contribution_percentage', (row) => Boolean(row.user_id))
+  if (inventorTotal.hasRows && !isCompletePercentageTotal(inventorTotal.total)) {
+    throw new Error(percentageTotalError('Inventor contribution', inventorTotal.total))
+  }
+
+  const applicantTotal = percentageTotal(asRows(payload.applicants), 'ownership_percentage', (row) => Boolean(applicantKey(row)))
+  if (applicantTotal.hasRows && !isCompletePercentageTotal(applicantTotal.total)) {
+    throw new Error(percentageTotalError('Applicant ownership', applicantTotal.total))
   }
 }
 
@@ -696,6 +709,28 @@ function asNumbers(value: unknown) {
   return Array.isArray(value) ? value.map(Number).filter((item) => Number.isFinite(item) && item > 0) : []
 }
 
+function percentageTotal(rows: RepeaterRow[], fieldName: string, includeRow: (row: RepeaterRow) => boolean) {
+  const includedRows = rows.filter(includeRow)
+  const total = includedRows.reduce((sum, row) => {
+    const value = Number(row[fieldName] || 0)
+    return Number.isFinite(value) ? sum + value : sum
+  }, 0)
+
+  return { total, hasRows: includedRows.length > 0 }
+}
+
+function isCompletePercentageTotal(total: number) {
+  return Math.abs(total - 100) < 0.001
+}
+
+function formatPercentageTotal(total: number) {
+  return Number.isInteger(total) ? String(total) : total.toFixed(2).replace(/\.?0+$/, '')
+}
+
+function percentageTotalError(label: string, total: number) {
+  return `${label} percentages must total 100%. Current total is ${formatPercentageTotal(total)}%.`
+}
+
 function nullableNumber(value: unknown) {
   const numberValue = Number(value)
   return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : null
@@ -944,6 +979,8 @@ function InventorRepeater({ value, onChange }: { value: DraftValue; onChange: (v
   })
   const users = result?.data || []
   const selectedUserIds = rows.map((row) => Number(row.user_id)).filter(Boolean)
+  const contributionTotal = percentageTotal(rows, 'contribution_percentage', (row) => Boolean(row.user_id))
+  const contributionError = contributionTotal.hasRows && !isCompletePercentageTotal(contributionTotal.total)
 
   return (
     <div className="repeater">
@@ -987,6 +1024,13 @@ function InventorRepeater({ value, onChange }: { value: DraftValue; onChange: (v
       <button className="button secondary" type="button" onClick={() => onChange([...rows, { user_id: '', contribution_percentage: '', contribution_description: '' }])}>
         + Add Inventor
       </button>
+      {contributionTotal.hasRows && (
+        <p className={contributionError ? 'error repeater-summary' : 'muted repeater-summary'}>
+          {contributionError
+            ? percentageTotalError('Inventor contribution', contributionTotal.total)
+            : `Inventor contribution total: ${formatPercentageTotal(contributionTotal.total)}%.`}
+        </p>
+      )}
     </div>
   )
 }
@@ -1006,6 +1050,8 @@ function ApplicantRepeater({ value, onChange }: { value: DraftValue; onChange: (
   const users = usersResult?.data || []
   const entities = entitiesResult?.data || []
   const selectedPartyKeys = rows.map(applicantKey).filter(Boolean)
+  const ownershipTotal = percentageTotal(rows, 'ownership_percentage', (row) => Boolean(applicantKey(row)))
+  const ownershipError = ownershipTotal.hasRows && !isCompletePercentageTotal(ownershipTotal.total)
 
   return (
     <div className="repeater">
@@ -1071,6 +1117,13 @@ function ApplicantRepeater({ value, onChange }: { value: DraftValue; onChange: (
       <button className="button secondary" type="button" onClick={() => onChange([...rows, { user_applicant_id: '', entity_applicant_id: '', ownership_percentage: '' }])}>
         + Add Applicant
       </button>
+      {ownershipTotal.hasRows && (
+        <p className={ownershipError ? 'error repeater-summary' : 'muted repeater-summary'}>
+          {ownershipError
+            ? percentageTotalError('Applicant ownership', ownershipTotal.total)
+            : `Applicant ownership total: ${formatPercentageTotal(ownershipTotal.total)}%.`}
+        </p>
+      )}
     </div>
   )
 }
